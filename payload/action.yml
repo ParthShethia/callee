@@ -1,0 +1,9 @@
+name: payload
+description: Lab local action - executed from the callee checkout resolved via the extracted workflow_ref ref.
+inputs:
+  sentinel-token:
+    description: dummy sentinel secret passed down by the caller reusable workflow
+    required: true
+runs:
+  using: node24
+  main: index.js

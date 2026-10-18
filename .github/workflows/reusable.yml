@@ -1,0 +1,58 @@
+name: reusable-poc
+
+# Lab replica of angular/dev-infra reusable-release.yml mechanics (finding #5):
+#   1) extract the ref from github.workflow_ref (dev-infra pattern),
+#   2) actions/checkout THIS repo at that extracted ref (=> mutable main tip),
+#   3) execute a LOCAL action from that checkout, with a caller-supplied secret.
+# The workflow FILE is pinned by the caller; the executed local action content is NOT.
+on:
+  workflow_call:
+    secrets:
+      sentinel-token:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract ref from github.workflow_ref (dev-infra pattern)
+        id: get-ref
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          REF=$(echo "$WORKFLOW_REF" | cut -d'@' -f2)
+          echo "GITHUB_WORKFLOW_REF=$WORKFLOW_REF"
+          echo "EXTRACTED_REF=$REF"
+          echo "ref=$REF" >> $GITHUB_OUTPUT
+
+      - name: Checkout this repo at the extracted ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: parthtests/callee
+          ref: ${{ steps.get-ref.outputs.ref }}
+          path: .extracted
+
+      - name: Prove which commit content was actually used
+        run: |
+          echo "CALLEE_HEAD=$(git -C .extracted rev-parse HEAD)"
+          echo "CALLEE_PAYLOAD_VERSION=$(cat .extracted/payload/VERSION.txt)"
+          echo "CALLED_WORKFLOW_REF=${{ job.workflow_ref }}"
+          echo "CALLED_WORKFLOW_SHA=${{ job.workflow_sha }}"
+
+      - name: Execute LOCAL action from the extracted checkout (the pin-bypass surface)
+        uses: ./.extracted/payload
+        with:
+          sentinel-token: ${{ secrets.sentinel-token }}
+
+      - name: Upload payload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: payload-evidence
+          path: |
+            .extracted/payload/evidence.txt
+            .lab-marker-v2.txt
+          if-no-files-found: ignore

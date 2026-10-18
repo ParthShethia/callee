@@ -1,0 +1,22 @@
+name: post-approval-changes
+
+# Deployment of the REAL dev-infra post-approval-changes action (shipped bundle @ c09a8058).
+# main.js lab adaptations only: repo-owner guard + org name (angular/googlers -> parthtests)
+# and the installation-token call sites (env LAB_TOKEN or the lab app key). Decision logic verbatim.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  post_approval_changes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./github-actions/post-approval-changes
+        env:
+          LAB_TOKEN: ${{ secrets.LAB_TOKEN }}
+        with:
+          angular-robot-key: lab-not-used

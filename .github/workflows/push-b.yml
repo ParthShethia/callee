@@ -1,0 +1,27 @@
+name: push-b
+
+# Lab helper: force-pushes payload v2 onto the PR head branch as github-actions[bot].
+# NOTE (fidelity): pushes made with the repository GITHUB_TOKEN do not trigger new workflow
+# runs, so the synchronize-triggered post-approval run does not fire from this path; the
+# decisive head-move runs use a non-token actor. Recorded in the evidence.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  push-b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: payload-branch
+          fetch-depth: 0
+      - name: Rewrite payload to v2 and force-push
+        run: |
+          cp lab/payload-v2.js payload/index.js
+          echo "v2-exfil" > payload/VERSION.txt
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "lab: payload v2 (post-approval head move)"
+          git push origin HEAD:payload-branch --force
