@@ -1,0 +1,35 @@
+name: CI
+
+# Lab emulation (disclosed) of the target-side status conditions the ng-dev merge tool
+# expects: a check literally named `lint` (the tool's expected-CI marker) and a check run
+# named `cla/google` (the target's CLA bot check). Both substitute for Google-side
+# infrastructure the lab does not have; all other inputs (owner/name/branches) are real.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  checks: write
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "lint ok"
+
+  cla-emulation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the cla/google check run (CLA-bot stand-in)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api -X POST "/repos/$REPO/check-runs" \
+            -f name="cla/google" \
+            -f head_sha="$HEAD_SHA" \
+            -f status=completed \
+            -f conclusion=success
