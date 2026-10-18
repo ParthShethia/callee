@@ -1,0 +1,83 @@
+name: lab-release
+
+# Lab replica of the dev-infra release pipeline shape (finding #6/#31 route test):
+# the caller pins the workflow FILE by SHA; both jobs execute MAIN-controlled toolchain code
+# from a fresh checkout resolved via the extracted ref (the reusable-release.yml pattern).
+on:
+  workflow_call:
+    secrets:
+      wst-token:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract ref from github.workflow_ref (dev-infra pattern)
+        id: get-ref
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          REF=$(echo "$WORKFLOW_REF" | cut -d'@' -f2)
+          echo "EXTRACTED_REF=$REF"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+      - name: Checkout the release toolchain (this repo) at the extracted ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: parthtests/callee
+          ref: ${{ steps.get-ref.outputs.ref }}
+          path: .dev-infra
+      - name: Build the release package (main-controlled toolchain code)
+        run: |
+          echo "TOOLCHAIN_HEAD=$(git -C .dev-infra rev-parse HEAD)"
+          node .dev-infra/release/pack.mjs
+      - name: Upload built tgz
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-tgz
+          path: release-out/*.tgz
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract ref from github.workflow_ref (dev-infra pattern)
+        id: get-ref
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          REF=$(echo "$WORKFLOW_REF" | cut -d'@' -f2)
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+      - name: Second checkout at the extracted ref (second read of main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: parthtests/callee
+          ref: ${{ steps.get-ref.outputs.ref }}
+          path: .dev-infra
+      - name: Download built tgz from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ github.run_id }}" -n release-tgz -R "${{ github.repository }}" -D release-out
+          ls -la release-out
+      - name: Start the lab proxy stand-in (attacker proxy substitute; lab-local)
+        run: |
+          echo "PUBLISH_TOOLCHAIN_HEAD=$(git -C .dev-infra rev-parse HEAD)"
+          nohup node .dev-infra/release/labproxy.mjs > release-out/labproxy.log 2>&1 &
+          sleep 1
+          cat release-out/labproxy.log
+      - name: Run the main-controlled publish (token in env)
+        env:
+          WST_TOKEN: ${{ secrets.wst-token }}
+        continue-on-error: true
+        run: node .dev-infra/release/publish.mjs
+      - name: Upload proxy capture + lab logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-capture
+          path: release-out/*.log
+          if-no-files-found: ignore
